@@ -1,0 +1,38 @@
+@using OrderFlow.Web.Api.Models
+
+<ol aria-label="Order saga timeline">
+    <li class="@StepClass(0)">Placed</li>
+    <li class="@StepClass(1)">Reserved</li>
+    <li class="@StepClass(2)">Charged</li>
+    <li class="@StepClass(3)">@(IsCancelled ? "Cancelled" : "Confirmed")</li>
+</ol>
+
+@code {
+    [Parameter]
+    public OrderDetails? Order { get; set; }
+
+    private bool IsCancelled => string.Equals(Order?.Status, "Cancelled", StringComparison.OrdinalIgnoreCase);
+    private bool IsConfirmed => string.Equals(Order?.Status, "Confirmed", StringComparison.OrdinalIgnoreCase);
+    private bool FailedAtReservation => Order?.FailureStage == "ReservationRejected";
+    private bool FailedAtPayment => Order?.FailureStage == "PaymentDeclined";
+
+    private string StepClass(int step)
+    {
+        if (Order is null) return step == 0 ? "active" : "pending";
+
+        // The step that actually failed, driven by the order's recorded FailureStage.
+        if (step == 1 && FailedAtReservation) return "failed";
+        if (step == 2 && FailedAtPayment) return "failed";
+        if (step == 3 && IsCancelled) return "failed";
+
+        if (step == 0
+            || (step == 1 && Order.ReservationCompleted)
+            || (step == 2 && Order.PaymentCompleted)
+            || (step == 3 && IsConfirmed))
+        {
+            return "complete";
+        }
+
+        return "active";
+    }
+}

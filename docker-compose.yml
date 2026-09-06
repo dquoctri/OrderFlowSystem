@@ -1,0 +1,270 @@
+name: order-flow
+
+services:
+  pulsar:
+    image: apachepulsar/pulsar:3.2.4
+    command: ["bin/pulsar", "standalone"]
+    expose:
+      - "6650"
+      - "8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/admin/v2/brokers/health >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  pulsar-init:
+    image: apachepulsar/pulsar:3.2.4
+    depends_on:
+      pulsar:
+        condition: service_healthy
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        # Keep this list in sync with src/BuildingBlocks/OrderFlow.Messaging/PulsarTopics.cs.
+        for topic in \
+          persistent://public/default/orderflow.order-placed \
+          persistent://public/default/orderflow.reservation-succeeded \
+          persistent://public/default/orderflow.reservation-failed \
+          persistent://public/default/orderflow.payment-succeeded \
+          persistent://public/default/orderflow.payment-failed \
+          persistent://public/default/orderflow.stock-released \
+          persistent://public/default/orderflow.order-placed.dlq \
+          persistent://public/default/orderflow.reservation-succeeded.dlq \
+          persistent://public/default/orderflow.reservation-failed.dlq \
+          persistent://public/default/orderflow.payment-succeeded.dlq \
+          persistent://public/default/orderflow.payment-failed.dlq \
+          persistent://public/default/orderflow.stock-released.dlq; do
+          if ! bin/pulsar-admin --admin-url http://pulsar:8080 topics create-partitioned-topic "$$topic" --partitions 4; then
+            bin/pulsar-admin --admin-url http://pulsar:8080 topics get-partitioned-topic-metadata "$$topic" >/dev/null
+          fi
+        done
+    restart: "no"
+
+  orders-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: orderflow_orders
+      POSTGRES_USER: orderflow_orders
+      POSTGRES_PASSWORD: ${ORDERS_DB_PASSWORD:-orders_dev_password}
+    volumes:
+      - orders-db-data:/var/lib/postgresql/data
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orderflow_orders -d orderflow_orders"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  inventory-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: orderflow_inventory
+      POSTGRES_USER: orderflow_inventory
+      POSTGRES_PASSWORD: ${INVENTORY_DB_PASSWORD:-inventory_dev_password}
+    volumes:
+      - inventory-db-data:/var/lib/postgresql/data
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orderflow_inventory -d orderflow_inventory"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  payments-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: orderflow_payments
+      POSTGRES_USER: orderflow_payments
+      POSTGRES_PASSWORD: ${PAYMENTS_DB_PASSWORD:-payments_dev_password}
+    volumes:
+      - payments-db-data:/var/lib/postgresql/data
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orderflow_payments -d orderflow_payments"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  orders-api:
+    build:
+      context: .
+      dockerfile: src/Orders/OrderFlow.Orders.Api/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Database__ConnectionString: Host=orders-db;Port=5432;Database=orderflow_orders;Username=orderflow_orders;Password=${ORDERS_DB_PASSWORD:-orders_dev_password}
+      Pulsar__ServiceUrl: pulsar://pulsar:6650
+      Pulsar__AdminUrl: http://pulsar:8080
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/live"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 384M
+    depends_on:
+      pulsar:
+        condition: service_healthy
+      pulsar-init:
+        condition: service_completed_successfully
+      orders-db:
+        condition: service_healthy
+      orders-migrator:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  orders-migrator:
+    build:
+      context: .
+      dockerfile: src/Orders/OrderFlow.Orders.Api/Dockerfile
+    command: ["--migrate"]
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Database__ConnectionString: Host=orders-db;Port=5432;Database=orderflow_orders;Username=orderflow_orders;Password=${ORDERS_DB_PASSWORD:-orders_dev_password}
+      Pulsar__ServiceUrl: pulsar://pulsar:6650
+      Pulsar__AdminUrl: http://pulsar:8080
+    depends_on:
+      orders-db:
+        condition: service_healthy
+    restart: "no"
+
+  inventory-api:
+    build:
+      context: .
+      dockerfile: src/Inventory/OrderFlow.Inventory.Api/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Database__ConnectionString: Host=inventory-db;Port=5432;Database=orderflow_inventory;Username=orderflow_inventory;Password=${INVENTORY_DB_PASSWORD:-inventory_dev_password}
+      Pulsar__ServiceUrl: pulsar://pulsar:6650
+      Pulsar__AdminUrl: http://pulsar:8080
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/live"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 384M
+    depends_on:
+      pulsar:
+        condition: service_healthy
+      pulsar-init:
+        condition: service_completed_successfully
+      inventory-db:
+        condition: service_healthy
+      inventory-migrator:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  inventory-migrator:
+    build:
+      context: .
+      dockerfile: src/Inventory/OrderFlow.Inventory.Api/Dockerfile
+    command: ["--migrate"]
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Database__ConnectionString: Host=inventory-db;Port=5432;Database=orderflow_inventory;Username=orderflow_inventory;Password=${INVENTORY_DB_PASSWORD:-inventory_dev_password}
+      Pulsar__ServiceUrl: pulsar://pulsar:6650
+      Pulsar__AdminUrl: http://pulsar:8080
+    depends_on:
+      inventory-db:
+        condition: service_healthy
+    restart: "no"
+
+  payments-api:
+    build:
+      context: .
+      dockerfile: src/Payments/OrderFlow.Payments.Api/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Database__ConnectionString: Host=payments-db;Port=5432;Database=orderflow_payments;Username=orderflow_payments;Password=${PAYMENTS_DB_PASSWORD:-payments_dev_password}
+      Pulsar__ServiceUrl: pulsar://pulsar:6650
+      Pulsar__AdminUrl: http://pulsar:8080
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/live"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 384M
+    depends_on:
+      pulsar:
+        condition: service_healthy
+      pulsar-init:
+        condition: service_completed_successfully
+      payments-db:
+        condition: service_healthy
+      payments-migrator:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  payments-migrator:
+    build:
+      context: .
+      dockerfile: src/Payments/OrderFlow.Payments.Api/Dockerfile
+    command: ["--migrate"]
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Database__ConnectionString: Host=payments-db;Port=5432;Database=orderflow_payments;Username=orderflow_payments;Password=${PAYMENTS_DB_PASSWORD:-payments_dev_password}
+      Pulsar__ServiceUrl: pulsar://pulsar:6650
+      Pulsar__AdminUrl: http://pulsar:8080
+    depends_on:
+      payments-db:
+        condition: service_healthy
+    restart: "no"
+
+  web:
+    build:
+      context: .
+      dockerfile: src/Web/OrderFlow.Web/Dockerfile
+    expose:
+      - "8080"
+    environment:
+      NGINX_ENTRYPOINT_QUIET_LOGS: "1"
+    restart: unless-stopped
+
+  edge:
+    image: nginxinc/nginx-unprivileged:1.27-alpine
+    user: "101:101"
+    ports:
+      - "5000:5000"
+      - "5001:5001"
+      - "5002:5002"
+      - "5003:5003"
+    volumes:
+      - ./infra/gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      web:
+        condition: service_started
+      orders-api:
+        condition: service_healthy
+      inventory-api:
+        condition: service_healthy
+      payments-api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  orders-db-data:
+  inventory-db-data:
+  payments-db-data:

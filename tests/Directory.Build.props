@@ -1,0 +1,14 @@
+<Project>
+  <!-- Inherit the repo-wide settings (net10.0, nullable, warnings-as-errors)… -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <!-- …but relax analyzer rules that fight the way tests are written:
+         CA1707 test names use Method_Scenario_Expectation
+         CA1861 inline arrays are test data, not hot-path arguments
+         CA1859 tests deliberately hold interfaces to prove polymorphism
+         CA2007 no synchronization context in a test host -->
+    <NoWarn>$(NoWarn);CA1707;CA1861;CA1859;CA2007</NoWarn>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,40 @@
+# Production overlay: provide all *_DB_PASSWORD values from a platform secret store.
+# Docker/Swarm secrets, Kubernetes Secrets, or AWS Secrets Manager are appropriate;
+# the development defaults in docker-compose.yml must not be used in production.
+services:
+  orders-db:
+    environment:
+      POSTGRES_PASSWORD: ${ORDERS_DB_PASSWORD:?ORDERS_DB_PASSWORD must be set for production}
+  inventory-db:
+    environment:
+      POSTGRES_PASSWORD: ${INVENTORY_DB_PASSWORD:?INVENTORY_DB_PASSWORD must be set for production}
+  payments-db:
+    environment:
+      POSTGRES_PASSWORD: ${PAYMENTS_DB_PASSWORD:?PAYMENTS_DB_PASSWORD must be set for production}
+  orders-api:
+    environment:
+      Database__ConnectionString: Host=orders-db;Port=5432;Database=orderflow_orders;Username=orderflow_orders;Password=${ORDERS_DB_PASSWORD:?ORDERS_DB_PASSWORD must be set for production}
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 512M
+  inventory-api:
+    environment:
+      Database__ConnectionString: Host=inventory-db;Port=5432;Database=orderflow_inventory;Username=orderflow_inventory;Password=${INVENTORY_DB_PASSWORD:?INVENTORY_DB_PASSWORD must be set for production}
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 512M
+  payments-api:
+    environment:
+      Database__ConnectionString: Host=payments-db;Port=5432;Database=orderflow_payments;Username=orderflow_payments;Password=${PAYMENTS_DB_PASSWORD:?PAYMENTS_DB_PASSWORD must be set for production}
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 512M

@@ -1,0 +1,129 @@
+:root {
+    color-scheme: light;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: #172033;
+    background: #f3f6fb;
+}
+
+* { box-sizing: border-box; }
+
+body { margin: 0; }
+
+a { color: #2457d6; text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+nav {
+    display: flex;
+    gap: 1.25rem;
+    padding: 1rem max(1.25rem, calc((100vw - 1180px) / 2));
+    background: #172554;
+}
+
+nav a { color: #dbeafe; font-weight: 700; }
+
+main {
+    width: min(1180px, calc(100% - 2rem));
+    margin: 0 auto;
+    padding: 2rem 0 4rem;
+}
+
+h1, h2 { margin-top: 0; }
+h1 { margin-bottom: .4rem; font-size: clamp(2rem, 4vw, 3.2rem); letter-spacing: -.04em; }
+h2 { margin-bottom: 0; font-size: 1.25rem; }
+
+.page-heading, .panel-heading, .tracked-order {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.page-heading { margin-bottom: 1.25rem; }
+.eyebrow { margin: 0 0 .35rem; color: #52607a; font-size: .72rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.muted { color: #65738d; }
+.refresh-time { margin: -.5rem 0 1.25rem; font-size: .85rem; }
+
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+}
+
+.panel {
+    margin-top: 1rem;
+    padding: 1.25rem;
+    border: 1px solid #dbe3f0;
+    border-radius: 1rem;
+    background: #fff;
+    box-shadow: 0 12px 30px rgba(28, 45, 80, .06);
+}
+
+.dashboard-grid .panel { margin-top: 0; }
+.count-badge { padding: .3rem .6rem; border-radius: 999px; background: #edf2ff; color: #2457d6; font-size: .78rem; font-weight: 700; white-space: nowrap; }
+.table-wrap { overflow-x: auto; margin-top: 1rem; }
+table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+th { color: #65738d; font-size: .72rem; letter-spacing: .06em; text-align: left; text-transform: uppercase; }
+th, td { padding: .8rem .55rem; border-bottom: 1px solid #edf0f5; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+.selected-row { background: #f2f6ff; }
+.empty-cell { padding: 1.5rem .55rem; color: #65738d; text-align: center; }
+.positive { color: #15803d; font-weight: 700; }
+.negative { color: #b42318; font-weight: 700; }
+
+button { border: 0; border-radius: .55rem; cursor: pointer; font: inherit; font-weight: 700; }
+button:disabled { cursor: wait; opacity: .6; }
+.secondary-button { padding: .65rem .9rem; background: #e7edff; color: #2457d6; }
+.link-button { padding: .2rem .4rem; background: transparent; color: #2457d6; }
+.link-button:hover { text-decoration: underline; }
+
+.status-pill { display: inline-flex; padding: .28rem .55rem; border-radius: 999px; font-size: .75rem; font-weight: 800; }
+.status-pill.pending, .status-pill.in-progress { background: #fff4d6; color: #9a6700; }
+.status-pill.confirmed { background: #dcfce7; color: #166534; }
+.status-pill.cancelled { background: #fee2e2; color: #991b1b; }
+.alert { margin: 1rem 0; padding: .8rem 1rem; border-radius: .65rem; }
+.alert.warning { background: #fff7dd; color: #7a4d00; }
+.alert.success { background: #dcfce7; color: #166534; font-weight: 600; }
+.alert.failure { background: #fee2e2; color: #991b1b; font-weight: 600; }
+
+.saga-journey .panel-heading { margin-bottom: .5rem; }
+ol.journey { margin: .5rem 0 0; padding: 0; list-style: none; }
+ol.journey .journey-item { position: relative; display: flex; gap: .85rem; padding: .55rem 0 .9rem 0; }
+ol.journey .journey-item:not(:last-child) { border-left: 2px solid #dbe3f0; margin-left: .34rem; padding-left: .85rem; }
+ol.journey .journey-item:last-child { margin-left: .34rem; padding-left: .85rem; }
+.journey-dot { position: absolute; left: -.42rem; top: .7rem; width: .7rem; height: .7rem; border-radius: 50%; background: #4f7cff; box-shadow: 0 0 0 3px #e7edff; }
+.journey-item.source-inventory .journey-dot { background: #7c3aed; box-shadow: 0 0 0 3px #ede9fe; }
+.journey-item.source-payments .journey-dot { background: #0891b2; box-shadow: 0 0 0 3px #cffafe; }
+.journey-item.is-failure .journey-dot { background: #ef4444; box-shadow: 0 0 0 3px #fee2e2; }
+.journey-body { display: grid; gap: .2rem; }
+.journey-line { display: flex; align-items: baseline; flex-wrap: wrap; gap: .5rem; }
+.journey-source { padding: .1rem .4rem; border-radius: 999px; background: #eef2ff; color: #4338ca; font-size: .68rem; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
+.journey-time { font-size: .78rem; }
+.journey-detail { font-size: .85rem; color: #475569; }
+.journey-detail.negative { color: #b42318; font-weight: 600; }
+
+.saga-panel { padding-bottom: 1.5rem; }
+.tracked-order { align-items: flex-start; justify-content: flex-start; margin: 1.5rem 0 1rem; gap: clamp(1.5rem, 8vw, 6rem); }
+.tracked-order div { display: grid; gap: .25rem; }
+.tracked-order code { color: #334155; }
+.empty-state { display: grid; gap: .4rem; padding: 2rem 0 .75rem; color: #65738d; }
+.saga-help { margin: 1.25rem 0 0; font-size: .85rem; }
+
+[aria-label="Order saga timeline"] { display: flex; gap: 0; margin: 1rem 0 0; padding: 0; list-style: none; }
+[aria-label="Order saga timeline"] li { position: relative; flex: 1; padding: 2.2rem .4rem 0; color: #94a3b8; font-size: .82rem; font-weight: 800; text-align: center; }
+[aria-label="Order saga timeline"] li::before { position: absolute; top: .35rem; left: calc(50% - .6rem); width: 1.2rem; height: 1.2rem; border: 3px solid #cbd5e1; border-radius: 50%; background: #fff; content: ""; }
+[aria-label="Order saga timeline"] li:not(:last-child)::after { position: absolute; top: .85rem; left: calc(50% + .6rem); width: calc(100% - 1.2rem); height: 3px; background: #e2e8f0; content: ""; }
+[aria-label="Order saga timeline"] li.complete { color: #166534; }
+[aria-label="Order saga timeline"] li.complete::before { border-color: #22c55e; background: #22c55e; }
+[aria-label="Order saga timeline"] li.complete:not(:last-child)::after { background: #22c55e; }
+[aria-label="Order saga timeline"] li.active { color: #2457d6; }
+[aria-label="Order saga timeline"] li.active::before { border-color: #4f7cff; box-shadow: 0 0 0 4px #e7edff; }
+[aria-label="Order saga timeline"] li.failed { color: #991b1b; }
+[aria-label="Order saga timeline"] li.failed::before { border-color: #ef4444; background: #ef4444; }
+
+#blazor-error-ui { display: none; }
+
+@media (max-width: 800px) {
+    .dashboard-grid { grid-template-columns: 1fr; }
+    .page-heading, .panel-heading, .tracked-order { align-items: flex-start; flex-direction: column; }
+    .tracked-order { gap: .8rem; }
+}

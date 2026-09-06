@@ -1,0 +1,15 @@
+**/bin/
+**/obj/
+.git/
+.vs/
+.vscode/
+.dotnet/
+ai-memory/
+docs/
+tests/
+TestResults/
+global.json
+.env
+**/*.user
+*.md
+*.pdf

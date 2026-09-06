@@ -1,0 +1,155 @@
+@page "/place-order"
+@implements IDisposable
+@inject OrderFlowApiClient Api
+
+<PageTitle>Place order</PageTitle>
+<h1>Place order</h1>
+
+<label>Customer ID <input @bind="customerId" /></label>
+<h2>Order lines</h2>
+@foreach (var line in lines)
+{
+    <div>
+        <select @bind="line.Sku"><option>WIDGET-01</option><option>WIDGET-02</option></select>
+        <input type="number" min="1" @bind="line.Quantity" />
+        <input type="number" min="0" step="0.01" @bind="line.UnitPrice" />
+    </div>
+}
+<button @onclick="AddLine">Add line</button>
+<button @onclick="SubmitAsync" disabled="@isSubmitting">Place order</button>
+<p class="muted">Tip: a total ending in <code>.99</code> (e.g. <code>10.99</code>) makes the fake gateway decline the payment.</p>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div class="alert warning">@message</div>
+}
+
+@if (order is not null)
+{
+    <div class="panel">
+        <p>Order <code>@order.OrderId</code> is
+            <span class="status-pill @StatusClass(latest?.Status ?? order.Status)">@(latest?.Status ?? order.Status)</span>.
+        </p>
+
+        @if (Outcome() is { } outcome)
+        {
+            <div class="alert @(outcome.Ok ? "success" : "failure")">@outcome.Text</div>
+        }
+        else
+        {
+            <p class="muted">The page follows the order every 250&nbsp;ms while the saga runs.</p>
+        }
+
+        <SagaTimeline Order="latest" />
+        @if (statusHistory.Count > 0)
+        {
+            <p class="muted">Status trail: @string.Join(" → ", statusHistory)</p>
+        }
+    </div>
+
+    <div class="panel">
+        <SagaJourney OrderId="order.OrderId" Active="@(!IsTerminal(latest?.Status))" />
+    </div>
+}
+
+@code {
+    private CancellationTokenSource? pollingCts;
+    private string customerId = "cust-demo";
+    private List<EditableOrderLine> lines = new() { new("WIDGET-01", 1, 10.00m) };
+    private OrderCreated? order;
+    private OrderDetails? latest;
+    private string? message;
+    private bool isSubmitting;
+    private readonly List<string> statusHistory = [];
+
+    private void AddLine() => lines.Add(new EditableOrderLine("WIDGET-02", 1, 5.50m));
+
+    private async Task SubmitAsync()
+    {
+        pollingCts?.Cancel();
+        pollingCts?.Dispose();
+        pollingCts = new CancellationTokenSource();
+        var cancellationToken = pollingCts.Token;
+        isSubmitting = true;
+        message = null;
+        order = null;
+        latest = null;
+        statusHistory.Clear();
+        try
+        {
+            order = await Api.CreateOrderAsync(new CreateOrderRequest(customerId,
+                lines.Select(line => new CreateOrderLineRequest(line.Sku, line.Quantity, line.UnitPrice)).ToList()), cancellationToken);
+            if (order is null)
+            {
+                message = "The Orders API did not return an order.";
+                return;
+            }
+
+            RecordStatus(order.Status);
+            for (var attempt = 0; attempt < 60 && !cancellationToken.IsCancellationRequested; attempt++)
+            {
+                latest = await Api.GetOrderAsync(order.OrderId, cancellationToken);
+                RecordStatus(latest?.Status);
+                if (IsTerminal(latest?.Status)) break;
+                await Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            message = exception.Message;
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    private (bool Ok, string Text)? Outcome()
+    {
+        if (latest is null) return null;
+        if (string.Equals(latest.Status, "Confirmed", StringComparison.OrdinalIgnoreCase))
+        {
+            return (true, $"Confirmed — customer charged {latest.TotalAmount:C} and stock permanently consumed.");
+        }
+        if (string.Equals(latest.Status, "Cancelled", StringComparison.OrdinalIgnoreCase))
+        {
+            var why = latest.FailureReason ?? "the saga was cancelled";
+            var stage = latest.FailureStage switch
+            {
+                "ReservationRejected" => "Stock could not be reserved",
+                "PaymentDeclined" => "Payment was declined",
+                _ => "Cancelled"
+            };
+            return (false, $"{stage} — {why}. Any reserved stock has been released.");
+        }
+        return null;
+    }
+
+    private static bool IsTerminal(string? status) =>
+        status is "Confirmed" or "Cancelled";
+
+    private void RecordStatus(string? status)
+    {
+        if (!string.IsNullOrWhiteSpace(status) && statusHistory.LastOrDefault() != status)
+        {
+            statusHistory.Add(status);
+        }
+    }
+
+    private static string StatusClass(string status) => status.ToLowerInvariant() switch
+    {
+        "confirmed" => "confirmed",
+        "cancelled" => "cancelled",
+        "pending" => "pending",
+        _ => "in-progress"
+    };
+
+    public void Dispose()
+    {
+        pollingCts?.Cancel();
+        pollingCts?.Dispose();
+    }
+}

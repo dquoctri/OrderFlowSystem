@@ -55,3 +55,15 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+bin/
+obj/
+.dotnet/
+.vs/
+TestResults/
+.env
+docker-compose.override.yml
+
+# Local-only AI agent workspace: memory, planning, reviews, archive.
+# Never committed. See ai-memory/README.md for the layout.
+ai-memory/

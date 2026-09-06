@@ -1,0 +1,76 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OrderFlow.Contracts", "src\BuildingBlocks\OrderFlow.Contracts\OrderFlow.Contracts.csproj", "{A1F3A8B2-1D17-4C84-8A9A-000000000001}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OrderFlow.Messaging", "src\BuildingBlocks\OrderFlow.Messaging\OrderFlow.Messaging.csproj", "{A1F3A8B2-1D17-4C84-8A9A-000000000010}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OrderFlow.Orders.Api", "src\Orders\OrderFlow.Orders.Api\OrderFlow.Orders.Api.csproj", "{A1F3A8B2-1D17-4C84-8A9A-000000000002}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OrderFlow.Inventory.Api", "src\Inventory\OrderFlow.Inventory.Api\OrderFlow.Inventory.Api.csproj", "{A1F3A8B2-1D17-4C84-8A9A-000000000003}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OrderFlow.Payments.Api", "src\Payments\OrderFlow.Payments.Api\OrderFlow.Payments.Api.csproj", "{A1F3A8B2-1D17-4C84-8A9A-000000000004}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OrderFlow.Web", "src\Web\OrderFlow.Web\OrderFlow.Web.csproj", "{A1F3A8B2-1D17-4C84-8A9A-000000000005}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Orders.Tests", "tests\Orders.Tests\Orders.Tests.csproj", "{A1F3A8B2-1D17-4C84-8A9A-000000000006}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Inventory.Tests", "tests\Inventory.Tests\Inventory.Tests.csproj", "{A1F3A8B2-1D17-4C84-8A9A-000000000007}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Payments.Tests", "tests\Payments.Tests\Payments.Tests.csproj", "{A1F3A8B2-1D17-4C84-8A9A-000000000008}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Integration.Tests", "tests\Integration.Tests\Integration.Tests.csproj", "{A1F3A8B2-1D17-4C84-8A9A-000000000009}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{A1F3A8B2-1D17-4C84-8A9A-000000000001}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000001}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000001}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000001}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000010}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000010}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000010}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000010}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000002}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000002}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000002}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000002}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000003}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000003}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000003}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000003}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000004}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000004}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000004}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000004}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000005}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000005}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000005}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000005}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000006}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000006}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000006}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000006}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000007}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000007}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000007}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000007}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000008}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000008}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000008}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000008}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000009}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000009}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000009}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000009}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

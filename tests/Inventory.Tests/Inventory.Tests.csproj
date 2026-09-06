@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+    <PackageReference Include="Xunit.SkippableFact" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+    <ProjectReference Include="../../src/Inventory/OrderFlow.Inventory.Api/OrderFlow.Inventory.Api.csproj" />
+  </ItemGroup>
+</Project>

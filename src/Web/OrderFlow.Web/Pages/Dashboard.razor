@@ -1,0 +1,266 @@
+@page "/dashboard"
+@implements IDisposable
+@inject OrderFlowApiClient Api
+
+<PageTitle>Dashboard</PageTitle>
+
+<div class="page-heading">
+    <div>
+        <p class="eyebrow">OrderFlow observability</p>
+        <h1>Live order dashboard</h1>
+        <p class="muted">Watch stock, orders, and the distributed saga update while an order moves through the system.</p>
+    </div>
+    <button class="secondary-button" @onclick="RefreshAsync" disabled="@isLoading">@(isLoading ? "Refreshing..." : "Refresh")</button>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="alert warning" role="alert">@errorMessage</div>
+}
+
+@if (lastUpdated is not null)
+{
+    <p class="muted refresh-time">Last refresh: @lastUpdated.Value.LocalDateTime.ToString("HH:mm:ss.fff") (auto-refresh every 500ms)</p>
+}
+
+<section class="dashboard-grid">
+    <div class="panel stock-panel">
+        <div class="panel-heading">
+            <div>
+                <p class="eyebrow">Inventory service</p>
+                <h2>Stock</h2>
+            </div>
+            <span class="count-badge">@stock.Count items</span>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>SKU</th><th>On hand</th><th>Reserved</th><th>Available</th></tr></thead>
+                <tbody>
+                @if (stock.Count == 0)
+                {
+                    <tr><td colspan="4" class="empty-cell">No stock data is available.</td></tr>
+                }
+                else
+                {
+                    @foreach (var item in stock)
+                    {
+                        <tr><td><strong>@item.Sku</strong></td><td>@item.QuantityOnHand</td><td>@item.QuantityReserved</td><td class="@(item.Available > 0 ? "positive" : "negative")">@item.Available</td></tr>
+                    }
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="panel orders-panel">
+        <div class="panel-heading">
+            <div>
+                <p class="eyebrow">Orders service</p>
+                <h2>Recent orders</h2>
+            </div>
+            <span class="count-badge">@orders.Count orders</span>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>Order</th><th>Status</th><th>Total</th><th>Created</th><th></th></tr></thead>
+                <tbody>
+                @if (orders.Count == 0)
+                {
+                    <tr><td colspan="5" class="empty-cell">Place an order to see it here.</td></tr>
+                }
+                else
+                {
+                    @foreach (var item in orders)
+                    {
+                        <tr class="@(trackedOrderId == item.OrderId ? "selected-row" : null)">
+                            <td><code>@item.OrderId.ToString("N")[..8]</code></td>
+                            <td><span class="status-pill @StatusClass(item.Status)">@item.Status</span></td>
+                            <td>@item.TotalAmount.ToString("C")</td>
+                            <td>@item.CreatedAt.LocalDateTime.ToString("HH:mm:ss")</td>
+                            <td><button class="link-button" @onclick="() => TrackOrderAsync(item.OrderId)">Track</button></td>
+                        </tr>
+                    }
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+<section class="panel saga-panel">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">Pulsar choreography</p>
+            <h2>Live saga monitor</h2>
+        </div>
+        @if (trackedOrder is not null)
+        {
+            <span class="status-pill @StatusClass(trackedOrder.Status)">@trackedOrder.Status</span>
+        }
+    </div>
+
+    @if (trackedOrder is null)
+    {
+        <div class="empty-state">
+            <strong>No order selected</strong>
+            <span>Place an order, then select Track above to watch each event update.</span>
+        </div>
+    }
+    else
+    {
+        <div class="tracked-order">
+            <div>
+                <span class="muted">Tracking order</span>
+                <code>@trackedOrder.OrderId</code>
+            </div>
+            <div>
+                <span class="muted">Customer</span>
+                <strong>@trackedOrder.CustomerId</strong>
+            </div>
+            <div>
+                <span class="muted">Total</span>
+                <strong>@trackedOrder.TotalAmount.ToString("C")</strong>
+            </div>
+        </div>
+        <SagaTimeline Order="trackedOrder" />
+        @if (!string.IsNullOrWhiteSpace(trackedOrder.FailureReason))
+        {
+            <div class="alert failure">
+                @(trackedOrder.FailureStage switch
+                {
+                    "ReservationRejected" => "Stock could not be reserved",
+                    "PaymentDeclined" => "Payment was declined",
+                    _ => "Cancelled"
+                }) — @trackedOrder.FailureReason
+            </div>
+        }
+        <p class="muted saga-help">The monitor polls Orders and reflects reservation/payment events as the saga reaches its terminal state.</p>
+    }
+</section>
+
+@if (trackedOrder is not null)
+{
+    <section class="panel">
+        <SagaJourney OrderId="trackedOrder.OrderId" Active="@(trackedOrder.Status is not ("Confirmed" or "Cancelled"))" />
+    </section>
+}
+
+@code {
+    private readonly CancellationTokenSource cancellation = new();
+    private PeriodicTimer? refreshTimer;
+    private IReadOnlyList<StockItem> stock = [];
+    private IReadOnlyList<OrderSummary> orders = [];
+    private OrderDetails? trackedOrder;
+    private Guid? trackedOrderId;
+    private DateTimeOffset? lastUpdated;
+    private string? errorMessage;
+    private bool isLoading;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshAsync(cancellation.Token);
+        refreshTimer = new PeriodicTimer(TimeSpan.FromMilliseconds(500));
+        _ = RefreshLoopAsync(cancellation.Token);
+    }
+
+    private async Task RefreshLoopAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (refreshTimer is not null && await refreshTimer.WaitForNextTickAsync(cancellationToken))
+            {
+                await RefreshAsync(cancellationToken);
+                if (!cancellationToken.IsCancellationRequested)
+                {
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            errorMessage = $"Live refresh stopped: {exception.Message}";
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private Task RefreshAsync() => RefreshAsync(cancellation.Token);
+
+    private async Task RefreshAsync(CancellationToken cancellationToken)
+    {
+        if (cancellationToken.IsCancellationRequested) return;
+
+        isLoading = true;
+        var errors = new List<string>();
+        try
+        {
+            try
+            {
+                stock = await Api.GetStockAsync(cancellationToken);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                errors.Add($"Inventory: {exception.Message}");
+            }
+
+            try
+            {
+                orders = await Api.GetOrdersAsync(cancellationToken);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                errors.Add($"Orders: {exception.Message}");
+            }
+
+            trackedOrderId ??= orders.FirstOrDefault()?.OrderId;
+            if (trackedOrderId.HasValue)
+            {
+                try
+                {
+                    trackedOrder = await Api.GetOrderAsync(trackedOrderId.Value, cancellationToken);
+                    if (trackedOrder is null)
+                    {
+                        errors.Add("The tracked order was not found.");
+                    }
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    errors.Add($"Tracked order: {exception.Message}");
+                }
+            }
+
+            lastUpdated = DateTimeOffset.Now;
+            errorMessage = errors.Count == 0 ? null : string.Join(" | ", errors);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task TrackOrderAsync(Guid orderId)
+    {
+        trackedOrderId = orderId;
+        await RefreshAsync(cancellation.Token);
+    }
+
+    private static string StatusClass(string status) => status.ToLowerInvariant() switch
+    {
+        "confirmed" => "confirmed",
+        "cancelled" => "cancelled",
+        "pending" => "pending",
+        _ => "in-progress"
+    };
+
+    public void Dispose()
+    {
+        cancellation.Cancel();
+        refreshTimer?.Dispose();
+        cancellation.Dispose();
+    }
+}

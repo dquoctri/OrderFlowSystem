@@ -1,0 +1,164 @@
+@using System.Text.Json
+@implements IDisposable
+@inject OrderFlowApiClient Api
+
+<div class="saga-journey">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">Pulsar choreography</p>
+            <h2>Event journey</h2>
+        </div>
+        @if (events.Count > 0)
+        {
+            <span class="count-badge">@events.Count events</span>
+        }
+    </div>
+
+    @if (OrderId is null)
+    {
+        <p class="muted">Place an order to watch its events arrive across the three services.</p>
+    }
+    else if (events.Count == 0)
+    {
+        <p class="muted">Waiting for the first event…</p>
+    }
+    else
+    {
+        <ol class="journey">
+            @foreach (var item in events)
+            {
+                <li class="journey-item source-@item.Source @(IsFailure(item) ? "is-failure" : null)">
+                    <span class="journey-dot"></span>
+                    <div class="journey-body">
+                        <div class="journey-line">
+                            <strong>@Label(item)</strong>
+                            <span class="journey-source">@item.Source</span>
+                            <span class="muted journey-time">@item.OccurredAt.LocalDateTime.ToString("HH:mm:ss.fff")</span>
+                        </div>
+                        @if (Describe(item) is { Length: > 0 } detail)
+                        {
+                            <div class="journey-detail @(IsFailure(item) ? "negative" : null)">@detail</div>
+                        }
+                    </div>
+                </li>
+            }
+        </ol>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid? OrderId { get; set; }
+
+    /// <summary>While true the component re-polls the trace; the parent sets it false once the order is terminal.</summary>
+    [Parameter] public bool Active { get; set; } = true;
+
+    private readonly List<SagaEvent> events = [];
+    private CancellationTokenSource? cts;
+    private Guid? loadedFor;
+
+    protected override void OnParametersSet()
+    {
+        if (OrderId == loadedFor)
+        {
+            return;
+        }
+
+        loadedFor = OrderId;
+        cts?.Cancel();
+        cts?.Dispose();
+        cts = null;
+        events.Clear();
+
+        if (OrderId is null)
+        {
+            return;
+        }
+
+        cts = new CancellationTokenSource();
+        _ = PollLoopAsync(OrderId.Value, cts.Token);
+    }
+
+    private async Task PollLoopAsync(Guid orderId, CancellationToken token)
+    {
+        try
+        {
+            for (var attempt = 0; !token.IsCancellationRequested; attempt++)
+            {
+                var trace = await Api.GetOrderTraceAsync(orderId, token);
+                if (trace.Count != events.Count)
+                {
+                    events.Clear();
+                    events.AddRange(trace);
+                    await InvokeAsync(StateHasChanged);
+                }
+
+                if (!Active && trace.Count > 0)
+                {
+                    break;
+                }
+
+                await Task.Delay(TimeSpan.FromMilliseconds(attempt < 4 ? 300 : 750), token);
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+        }
+        catch (Exception)
+        {
+            // trace is best-effort; the status pill and timeline still tell the story
+        }
+    }
+
+    private static bool IsFailure(SagaEvent item) =>
+        item.EventType is "ReservationFailed" or "PaymentFailed";
+
+    private static string Label(SagaEvent item) => item.EventType switch
+    {
+        "OrderPlaced" => "Order placed",
+        "ReservationSucceeded" => "Stock reserved",
+        "ReservationFailed" => "Reservation rejected",
+        "PaymentSucceeded" => "Payment charged",
+        "PaymentFailed" => "Payment declined",
+        "StockReleased" => "Stock released — compensation",
+        _ => item.EventType
+    };
+
+    private static string Describe(SagaEvent item)
+    {
+        if (item.Detail is not { } detail || detail.ValueKind != JsonValueKind.Object)
+        {
+            return string.Empty;
+        }
+
+        if (detail.TryGetProperty("reason", out var reason))
+        {
+            return reason.GetString() ?? string.Empty;
+        }
+
+        if (detail.TryGetProperty("amount", out var amount) && amount.TryGetDecimal(out var value))
+        {
+            return $"amount {value:C}";
+        }
+
+        if (detail.TryGetProperty("totalAmount", out var total) && total.TryGetDecimal(out var totalValue))
+        {
+            var lineCount = detail.TryGetProperty("lineCount", out var lc) ? lc.GetInt32() : 0;
+            return $"{lineCount} line(s), total {totalValue:C}";
+        }
+
+        if (detail.TryGetProperty("releasedLines", out var lines) && lines.ValueKind == JsonValueKind.Array)
+        {
+            var parts = lines.EnumerateArray()
+                .Select(line => $"{line.GetProperty("sku").GetString()} ×{line.GetProperty("quantity").GetInt32()}");
+            return "released " + string.Join(", ", parts);
+        }
+
+        return string.Empty;
+    }
+
+    public void Dispose()
+    {
+        cts?.Cancel();
+        cts?.Dispose();
+    }
+}
