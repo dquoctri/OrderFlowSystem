@@ -21,7 +21,8 @@ This document is the "what we built" answer to it.
 | Delivery guarantee | At-least-once + **inbox dedup** (idempotent consumers) |
 | Publishing | **Transactional outbox** + per-service relay worker (`FOR UPDATE SKIP LOCKED` lease) |
 | Poison messages | Backed-off redelivery, then **dead-letter topic after 3 attempts**, with inspect/replay endpoints |
-| Runtime orchestration | Docker Compose; one-shot `*-migrator` services; single `edge` proxy owns host ports 5000–5003 |
+| Runtime orchestration | Docker Compose; one-shot `*-migrator` services; single `edge` proxy owns host ports 5000–5004 |
+| Client → API path | Browser talks only to the **BFF** (`src/Web/OrderFlow.Bff`, port 5004), which composes Orders + Inventory server-side (§2.5) |
 | Stock consumption on success | **Reduce `quantity_on_hand`, clear the reservation's `quantity_reserved`, mark reservation `Consumed`** (see §5) |
 
 Everything the challenge lists under "Requirements" is implemented. Known gaps are in §8.
@@ -37,11 +38,15 @@ Everything the challenge lists under "Requirements" is implemented. Known gaps a
 
 ```mermaid
 flowchart LR
-    U([Customer / Reviewer]) --> EDGE[nginx edge proxy<br/>host ports 5000-5003]
+    U([Customer / Reviewer]) --> EDGE[nginx edge proxy<br/>host ports 5000-5004]
     EDGE -->|5000| WEB[Blazor WASM client]
-    WEB -->|5001| O[Orders API]
-    WEB -->|5002| I[Inventory API]
-    WEB -->|5003| P[Payments API]
+    EDGE -->|5004| BFF[BFF / API Composer]
+    WEB -->|all API calls| BFF
+    BFF --> O[Orders API]
+    BFF --> I[Inventory API]
+    EDGE -->|5001| O
+    EDGE -->|5002| I
+    EDGE -->|5003| P[Payments API]
 
     O <-->|events| PULSAR{{Apache Pulsar}}
     I <-->|events| PULSAR
@@ -52,8 +57,32 @@ flowchart LR
     P --> PDB[(payments DB)]
 ```
 
-Each service reads and writes **only its own database**. The only synchronous calls are
-browser → API (queries + `POST /orders`); every saga step travels as a Pulsar event.
+Each service reads and writes **only its own database**. The browser's only origin is the BFF; the
+BFF's calls to Orders/Inventory and the browser's `POST /orders` are the only synchronous hops —
+every saga step travels as a Pulsar event. Ports 5001–5003 remain exposed for direct access
+(tests, demo, `curl`).
+
+### API Composition for the dashboard
+
+```mermaid
+sequenceDiagram
+    participant SPA as Blazor SPA
+    participant BFF
+    participant O as Orders API
+    participant I as Inventory API
+    SPA->>BFF: GET /dashboard
+    par fan-out under one 3s budget
+        BFF->>O: GET /orders
+    and
+        BFF->>I: GET /stock
+    end
+    O-->>BFF: recent orders
+    I-->>BFF: stock (or error → warning, stock omitted)
+    BFF-->>SPA: { stock?, orders, warnings[], asOf }
+```
+
+Orders is required (its failure → `503`); Inventory is degradable (its failure → `stock: null` +
+a warning, the rest of the dashboard still renders).
 
 ### The two required outcomes as one flowchart
 
@@ -308,13 +337,35 @@ interface (registered in DI) and maps the result to a payment row + event via th
 
 ### 2.4 Web — `src/Web/OrderFlow.Web`, host port 5000
 
-Blazor WebAssembly, served as static files by nginx. API base URLs come from
-`wwwroot/appsettings.json` (`ApiUrls:Orders`, `ApiUrls:Inventory`) — no secrets, no connection strings.
+Blazor WebAssembly, served as static files by nginx. `wwwroot/appsettings.json` now holds a
+**single** URL — `ApiUrls:Bff` — no per-service addresses, no secrets, no connection strings.
+`OrderFlowApiClient` is a thin typed client over that one origin.
 
 - **Place order** ([PlaceOrder.razor](../src/Web/OrderFlow.Web/Pages/PlaceOrder.razor)) — build lines, submit, poll `GET /orders/{id}` every 250 ms until terminal. Shows the status trail, a `SagaTimeline`, an **outcome banner** ("Payment was declined — totals ending in .99 are rejected. Reserved stock has been released."), and the live **`SagaJourney`** feed. Polling uses a `CancellationTokenSource` disposed on navigation.
-- **Dashboard** ([Dashboard.razor](../src/Web/OrderFlow.Web/Pages/Dashboard.razor)) — auto-refreshes stock + recent orders + the tracked order's timeline / reason / event journey every 500 ms via a disposed `PeriodicTimer`.
+- **Dashboard** ([Dashboard.razor](../src/Web/OrderFlow.Web/Pages/Dashboard.razor)) — one `GET /dashboard` call to the BFF per 500 ms tick fills both the stock and recent-orders panels; any `warnings` from the BFF render as a banner. The tracked order's timeline / reason / event journey is a second call (`GET /orders/{id}`).
 - **SagaTimeline** ([SagaTimeline.razor](../src/Web/OrderFlow.Web/Components/SagaTimeline.razor)) — `Placed → Reserved → Charged → Confirmed/Cancelled` stepper; the failed step is coloured from the order's `failureStage`.
-- **SagaJourney** ([SagaJourney.razor](../src/Web/OrderFlow.Web/Components/SagaJourney.razor)) — vertical activity feed of `GET /orders/{id}/trace`, one card per event with a source badge (orders / inventory / payments) and a detail line (amount, reason, released lines). Polls the trace ~300–750 ms while the order is live, then stops. **Not yet SSE** — polling is intentional for the demo.
+- **SagaJourney** ([SagaJourney.razor](../src/Web/OrderFlow.Web/Components/SagaJourney.razor)) — vertical activity feed of `GET /orders/{id}/trace` (via the BFF pass-through), one card per event with a source badge (orders / inventory / payments) and a detail line (amount, reason, released lines). Polls the trace ~300–750 ms while the order is live, then stops. **Not yet SSE** — polling is intentional for the demo.
+
+### 2.5 BFF — `src/Web/OrderFlow.Bff`, host port 5004
+
+A stateless ASP.NET Core app that is the SPA's single origin and the **API Composer** for the
+dashboard. It has **no database, no Pulsar client, no project reference into `src/`** — it owns
+its own view models (`Bff/Contracts/`) and speaks only HTTP + JSON.
+
+| Endpoint | Kind | What it does |
+| --- | --- | --- |
+| `GET /dashboard` | composed | Fans out to Orders `/orders` + Inventory `/stock` **in parallel** under one 3 s budget; returns `{ stock?, orders, warnings[], asOf }`. |
+| `GET /dashboard/orders/{id}` | composed | Orders `/orders/{id}` + `/orders/{id}/trace` → `{ order, trace[] }`; `404` if Orders doesn't know the id. |
+| `POST /orders` | pass-through | Forwards the create request to Orders, relays status + body verbatim. |
+| `GET /orders/{id}`, `GET /orders/{id}/trace` | pass-through | Relay, so the SPA keeps one origin. |
+| `GET /health/{live,ready}` | — | `ready` also pings both downstreams. |
+
+Failure policy is per field: **Orders is required** (failure → `503`), **Inventory and the trace
+are degradable** (failure → omitted + a `warnings[]` entry).
+[DashboardComposer.cs](../src/Web/OrderFlow.Bff/Composition/DashboardComposer.cs) is the composer;
+[Clients/](../src/Web/OrderFlow.Bff/Clients/) holds the typed downstream clients (each with
+`PooledConnectionLifetime` + `AddStandardResilienceHandler`). What it does **not** do: participate
+in the saga, hold state, or aggregate for any client other than this web UI.
 
 ---
 
@@ -461,14 +512,18 @@ pulsar (healthy)
 orders-db / inventory-db / payments-db (healthy)
   └─> orders-migrator / inventory-migrator / payments-migrator   `--migrate`, exits 0
         └─> orders-api / inventory-api / payments-api  (healthy on /health/live)
+              └─> bff  (healthy on /health/live; depends on orders-api + inventory-api)
 web (static SPA via nginx)
-edge (nginx)  binds host 5000→web, 5001→orders, 5002→inventory, 5003→payments
+edge (nginx)  binds host 5000→web, 5001→orders, 5002→inventory, 5003→payments, 5004→bff
 ```
 
 - **Migrations run exactly once**, in the `*-migrator` one-shot containers — API replicas never
   call `Database.Migrate()`, so scaling `--scale orders-api=3` is race-free.
 - **Only `edge` publishes host ports.** Backend containers expose only their internal `8080`, so
   replicas don't collide; nginx resolves the scaled service name via Docker DNS.
+- **The BFF is stateless**, so `--scale bff=3` needs no coordination — `edge` round-robins to the
+  replicas, and each replica re-resolves Docker DNS for its downstream calls
+  (`PooledConnectionLifetime`) so they spread across scaled Orders/Inventory replicas too.
 - `docker-compose.prod.yml` is an overlay that makes every `*_DB_PASSWORD` mandatory (no dev
   default) and sets real resource limits — the "local vs deploy" delta in one file.
 
@@ -488,6 +543,8 @@ The known trade-offs below are all acceptable for the challenge scope:
 | 6 | `ReservationSucceeded.ReservationId` is a fresh random GUID, unrelated to the `reservations` rows. Nobody consumes it. | Misleading payload field; harmless. |
 | 7 | Processed `inbox_messages` / `outbox_messages` / `order_saga_log` rows are never pruned. | Unbounded growth over a long-lived deployment; irrelevant for a demo. |
 | 8 | Full `docker compose up` + browser smoke test requires a Docker host. | Reviewer verification step. |
+| 9 | The BFF composes with **API Composition** (read-time fan-out), not a CQRS read model. | Availability = all queried services up; joins are in-memory. Acceptable at this scale; a read model is the next step if query load grows. |
+| 10 | The BFF's circuit breaker is **per `HttpClient`**, not per replica; the optional stock cache would be **per BFF instance**. | An open breaker sheds load from all replicas of that downstream; cached stock can differ by a second between BFF replicas. |
 
 ---
 

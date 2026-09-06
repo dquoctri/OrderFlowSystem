@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <AssemblyName>OrderFlow.Bff</AssemblyName>
+    <RootNamespace>OrderFlow.Bff</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- No project references. The BFF owns its own view models and never touches
+         a domain contract, entity, or DbContext. It only speaks HTTP + JSON. -->
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
+  </ItemGroup>
+</Project>

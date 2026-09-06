@@ -38,3 +38,10 @@ services:
         limits:
           cpus: "1.00"
           memory: 512M
+  bff:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 384M

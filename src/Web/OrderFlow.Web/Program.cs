@@ -12,7 +12,7 @@ var apiUrls = builder.Configuration.GetSection("ApiUrls").Get<ApiUrls>()
 builder.Services.AddSingleton(apiUrls);
 builder.Services.AddHttpClient<OrderFlowApiClient>(client =>
 {
-    client.BaseAddress = new Uri(apiUrls.Orders);
+    client.BaseAddress = new Uri(apiUrls.Bff.TrimEnd('/') + "/");
 })
 .AddStandardResilienceHandler(options =>
 {

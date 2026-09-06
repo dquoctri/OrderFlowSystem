@@ -18,6 +18,11 @@
     <div class="alert warning" role="alert">@errorMessage</div>
 }
 
+@foreach (var warning in warnings)
+{
+    <div class="alert warning" role="status">@warning</div>
+}
+
 @if (lastUpdated is not null)
 {
     <p class="muted refresh-time">Last refresh: @lastUpdated.Value.LocalDateTime.ToString("HH:mm:ss.fff") (auto-refresh every 500ms)</p>
@@ -150,6 +155,7 @@
     private PeriodicTimer? refreshTimer;
     private IReadOnlyList<StockItem> stock = [];
     private IReadOnlyList<OrderSummary> orders = [];
+    private IReadOnlyList<string> warnings = [];
     private OrderDetails? trackedOrder;
     private Guid? trackedOrderId;
     private DateTimeOffset? lastUpdated;
@@ -198,20 +204,18 @@
         {
             try
             {
-                stock = await Api.GetStockAsync(cancellationToken);
+                // One composed call to the BFF replaces the separate stock + orders round-trips.
+                var dashboard = await Api.GetDashboardAsync(cancellationToken);
+                if (dashboard is not null)
+                {
+                    stock = dashboard.Stock ?? [];
+                    orders = dashboard.Orders;
+                    warnings = dashboard.Warnings;
+                }
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
-                errors.Add($"Inventory: {exception.Message}");
-            }
-
-            try
-            {
-                orders = await Api.GetOrdersAsync(cancellationToken);
-            }
-            catch (Exception exception) when (exception is not OperationCanceledException)
-            {
-                errors.Add($"Orders: {exception.Message}");
+                errors.Add($"Dashboard: {exception.Message}");
             }
 
             trackedOrderId ??= orders.FirstOrDefault()?.OrderId;

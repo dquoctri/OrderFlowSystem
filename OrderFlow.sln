@@ -23,6 +23,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Payments.Tests", "tests\Pay
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Integration.Tests", "tests\Integration.Tests\Integration.Tests.csproj", "{A1F3A8B2-1D17-4C84-8A9A-000000000009}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OrderFlow.Bff", "src\Web\OrderFlow.Bff\OrderFlow.Bff.csproj", "{A1F3A8B2-1D17-4C84-8A9A-000000000011}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Bff.Tests", "tests\Bff.Tests\Bff.Tests.csproj", "{A1F3A8B2-1D17-4C84-8A9A-000000000012}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -69,6 +73,14 @@ Global
 		{A1F3A8B2-1D17-4C84-8A9A-000000000009}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A1F3A8B2-1D17-4C84-8A9A-000000000009}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A1F3A8B2-1D17-4C84-8A9A-000000000009}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000011}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000011}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000011}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000011}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000012}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000012}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000012}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1F3A8B2-1D17-4C84-8A9A-000000000012}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

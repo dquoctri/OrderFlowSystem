@@ -21,6 +21,7 @@ Wait until `orders-api`, `inventory-api`, `payments-api` report healthy. In anot
 curl -s http://localhost:5001/health/ready
 curl -s http://localhost:5002/health/ready
 curl -s http://localhost:5003/health/ready
+curl -s http://localhost:5004/health/ready     # BFF — also pings Orders + Inventory
 ```
 
 Open the UI at <http://localhost:5000>. Keep **/dashboard** open in one tab — it auto-refreshes
@@ -127,6 +128,34 @@ Exactly one order reaches `Confirmed`; the other ends `Cancelled` with a `Reserv
 
 ---
 
+## 3b. Optional — the BFF (API Composition + scaling)
+
+The dashboard is one call to the BFF, which composes two services:
+
+```bash
+curl -s http://localhost:5004/dashboard | jq        # { stock, orders, warnings, asOf } — one response, two services
+curl -s http://localhost:5004/dashboard/orders/$ORDER | jq   # { order, trace } composed
+```
+
+**Graceful degradation** — stop Inventory and the dashboard still works:
+
+```bash
+docker compose stop inventory-api
+curl -s http://localhost:5004/dashboard | jq '{stock, warnings}'   # stock: null, warnings: ["Inventory is unavailable — stock is not shown."]
+docker compose start inventory-api
+```
+
+**Scaling** — the BFF is stateless; `edge` spreads requests across replicas:
+
+```bash
+docker compose up -d --scale bff=3
+docker compose up -d --force-recreate edge          # re-resolve upstreams
+for i in $(seq 1 12); do curl -s http://localhost:5004/dashboard >/dev/null; done
+docker compose logs --no-color bff | grep -c "Request starting"   # roughly even across the 3 replicas
+```
+
+---
+
 ## 4. Optional — poison message / DLQ
 
 ```bash
@@ -157,7 +186,8 @@ To re-run the demo from clean seed stock without a full teardown, use `down -v` 
 
 ## 6. Automated equivalent
 
-`tests/Integration.Tests/ComposeSagaTests.cs` runs both §1 and §2 against the running stack:
+`tests/Integration.Tests/ComposeSagaTests.cs` runs both §1 and §2 against the running stack, and
+`tests/Bff.Tests/ComposeBffTests.cs` runs §3b's composition checks:
 
 ```bash
 docker compose up --build            # leave running

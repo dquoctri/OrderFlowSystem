@@ -3,31 +3,28 @@ using OrderFlow.Web.Api.Models;
 
 namespace OrderFlow.Web.Api;
 
+/// <summary>
+/// The SPA's single HTTP dependency. Every call goes to the BFF (<see cref="ApiUrls.Bff"/>),
+/// which composes the Orders and Inventory services server-side.
+/// </summary>
 public sealed class OrderFlowApiClient
 {
     private readonly HttpClient httpClient;
-    private readonly ApiUrls urls;
 
-    public OrderFlowApiClient(HttpClient httpClient, ApiUrls urls)
-    {
-        this.httpClient = httpClient;
-        this.urls = urls;
-    }
+    public OrderFlowApiClient(HttpClient httpClient) => this.httpClient = httpClient;
 
     public Task<OrderCreated?> CreateOrderAsync(CreateOrderRequest request, CancellationToken cancellationToken = default) =>
-        PostAsync<OrderCreated>(urls.Orders.TrimEnd('/') + "/orders", request, cancellationToken);
+        PostAsync<OrderCreated>("orders", request, cancellationToken);
 
     public Task<OrderDetails?> GetOrderAsync(Guid orderId, CancellationToken cancellationToken = default) =>
-        httpClient.GetFromJsonAsync<OrderDetails>(urls.Orders.TrimEnd('/') + $"/orders/{orderId:D}", cancellationToken);
+        httpClient.GetFromJsonAsync<OrderDetails>($"orders/{orderId:D}", cancellationToken);
 
     public async Task<IReadOnlyList<SagaEvent>> GetOrderTraceAsync(Guid orderId, CancellationToken cancellationToken = default) =>
-        await httpClient.GetFromJsonAsync<List<SagaEvent>>(urls.Orders.TrimEnd('/') + $"/orders/{orderId:D}/trace", cancellationToken) ?? [];
+        await httpClient.GetFromJsonAsync<List<SagaEvent>>($"orders/{orderId:D}/trace", cancellationToken) ?? [];
 
-    public async Task<IReadOnlyList<OrderSummary>> GetOrdersAsync(CancellationToken cancellationToken = default) =>
-        await httpClient.GetFromJsonAsync<List<OrderSummary>>(urls.Orders.TrimEnd('/') + "/orders", cancellationToken) ?? new List<OrderSummary>();
-
-    public async Task<IReadOnlyList<StockItem>> GetStockAsync(CancellationToken cancellationToken = default) =>
-        await httpClient.GetFromJsonAsync<List<StockItem>>(urls.Inventory.TrimEnd('/') + "/stock", cancellationToken) ?? new List<StockItem>();
+    /// <summary>One call for the whole dashboard — stock + recent orders, composed by the BFF.</summary>
+    public Task<DashboardView?> GetDashboardAsync(CancellationToken cancellationToken = default) =>
+        httpClient.GetFromJsonAsync<DashboardView>("dashboard", cancellationToken);
 
     private async Task<T?> PostAsync<T>(string url, object payload, CancellationToken cancellationToken)
     {
