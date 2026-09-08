@@ -253,3 +253,9 @@ compensating action, not a database rollback. Poison messages are retried with b
 `/admin/dead-letters`. The SOLID mapping — one class per saga step, base workers closed for
 modification, contracts-only shared assembly, DI-injected validated options — is spelled out
 file-by-file in [docs/solution-overview.md §6](docs/solution-overview.md).
+
+The UI at `http://localhost:5000` includes a live SSE saga feed: Orders publishes committed log
+rows, the BFF fans them out, and one EventSource updates the tracked order. Dashboard tables
+refresh every five seconds. SSE supports `--scale bff=3 --scale orders-api=3` via PostgreSQL
+LISTEN/NOTIFY; each Orders replica uses one additional database connection. See the
+[live-feed demo](docs/demo-script.md#live-feed-and-reconnect-demo) for replay and reconnect checks.

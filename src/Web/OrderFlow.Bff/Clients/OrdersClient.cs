@@ -8,7 +8,21 @@ public sealed class OrdersClient : IOrdersClient
 {
     private readonly HttpClient httpClient;
 
-    public OrdersClient(HttpClient httpClient) => this.httpClient = httpClient;
+    private readonly IHttpClientFactory clients;
+
+    public OrdersClient(HttpClient httpClient, IHttpClientFactory clients)
+    {
+        this.httpClient = httpClient;
+        this.clients = clients;
+    }
+
+    public async Task<HttpResponseMessage> OpenTraceStreamAsync(Guid orderId, string? lastEventId, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri($"/orders/{orderId:D}/stream", UriKind.Relative));
+        request.Headers.Accept.ParseAdd("text/event-stream");
+        if (lastEventId is not null) request.Headers.Add("Last-Event-ID", lastEventId);
+        return await clients.CreateClient("orders-stream").SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+    }
 
     public async Task<IReadOnlyList<UpstreamOrderSummaryDto>> GetRecentOrdersAsync(CancellationToken cancellationToken) =>
         await httpClient.GetFromJsonAsync<List<UpstreamOrderSummaryDto>>("/orders", cancellationToken) ?? [];

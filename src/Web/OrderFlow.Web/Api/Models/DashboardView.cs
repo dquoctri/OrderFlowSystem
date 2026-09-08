@@ -7,3 +7,4 @@ public sealed record DashboardView(
     IReadOnlyList<OrderSummary> Orders,
     IReadOnlyList<string> Warnings,
     DateTimeOffset AsOf);
+public sealed record TrackedOrderView(OrderDetails Order, IReadOnlyList<SagaEvent> Trace);

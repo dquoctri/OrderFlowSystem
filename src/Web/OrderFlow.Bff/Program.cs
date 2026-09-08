@@ -35,6 +35,17 @@ builder.Services.AddHttpClient<IInventoryClient, InventoryClient>(client => SetB
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { PooledConnectionLifetime = connectionLifetime })
     .AddStandardResilienceHandler();
 
+// Streaming has no resilience/request timeout: only establishing the connection is bounded.
+builder.Services.AddHttpClient("orders-stream", client =>
+{
+    SetBaseAddress(client, downstream.OrdersBaseUrl);
+    client.Timeout = Timeout.InfiniteTimeSpan;
+}).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+{
+    PooledConnectionLifetime = connectionLifetime,
+    ConnectTimeout = TimeSpan.FromSeconds(5)
+});
+builder.Services.AddSingleton<OrderFlow.Bff.Streaming.SagaStreamFanout>();
 builder.Services.AddScoped<DashboardComposer>();
 
 builder.Services.AddHealthChecks()
@@ -47,6 +58,7 @@ app.UseStatusCodePages();
 app.UseCors();
 
 app.MapDashboardEndpoints();
+app.MapStreamEndpoints();
 app.MapPassThroughEndpoints();
 app.MapGet("/", () => Results.Ok(new { service = "bff" }));
 app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });

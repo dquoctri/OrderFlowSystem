@@ -1,8 +1,9 @@
 @using System.Text.Json
-@implements IDisposable
-@inject OrderFlowApiClient Api
+@implements IAsyncDisposable
+@inject SagaStreamClient Streams
 
 <div class="saga-journey">
+    @if (streamMessage is not null) { <p class="muted" role="status">@streamMessage</p> }
     <div class="panel-heading">
         <div>
             <p class="eyebrow">Pulsar choreography</p>
@@ -49,66 +50,44 @@
 @code {
     [Parameter] public Guid? OrderId { get; set; }
 
-    /// <summary>While true the component re-polls the trace; the parent sets it false once the order is terminal.</summary>
-    [Parameter] public bool Active { get; set; } = true;
+    [Parameter] public EventCallback<SagaStreamMessage> OnMessage { get; set; }
 
     private readonly List<SagaEvent> events = [];
-    private CancellationTokenSource? cts;
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private SagaStreamClient.Subscription? subscription;
     private Guid? loadedFor;
+    private string? streamMessage;
+    private bool disposed;
 
-    protected override void OnParametersSet()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (OrderId == loadedFor)
-        {
-            return;
-        }
-
+        if (disposed || OrderId == loadedFor) return;
         loadedFor = OrderId;
-        cts?.Cancel();
-        cts?.Dispose();
-        cts = null;
+        if (subscription is not null) await subscription.DisposeAsync();
+        subscription = null;
         events.Clear();
-
-        if (OrderId is null)
+        streamMessage = null;
+        if (OrderId is not { } id) return;
+        var next = await Streams.ConnectAsync(id, (kind, data) => InvokeAsync(async () =>
         {
-            return;
-        }
-
-        cts = new CancellationTokenSource();
-        _ = PollLoopAsync(OrderId.Value, cts.Token);
-    }
-
-    private async Task PollLoopAsync(Guid orderId, CancellationToken token)
-    {
-        try
-        {
-            for (var attempt = 0; !token.IsCancellationRequested; attempt++)
+            if (disposed || OrderId != id) return;
+            if (kind == "saga")
             {
-                var trace = await Api.GetOrderTraceAsync(orderId, token);
-                if (trace.Count != events.Count)
-                {
-                    events.Clear();
-                    events.AddRange(trace);
-                    await InvokeAsync(StateHasChanged);
-                }
-
-                if (!Active && trace.Count > 0)
-                {
-                    break;
-                }
-
-                await Task.Delay(TimeSpan.FromMilliseconds(attempt < 4 ? 300 : 750), token);
+                var row = data.Deserialize<SagaEvent>(JsonOptions)!;
+                if (events.Any(x => x.Seq == row.Seq)) return;
+                events.Add(row);
+                events.Sort((a, b) => a.Seq.CompareTo(b.Seq));
+                streamMessage = null;
             }
-        }
-        catch (OperationCanceledException) when (token.IsCancellationRequested)
-        {
-        }
-        catch (Exception)
-        {
-            // trace is best-effort; the status pill and timeline still tell the story
-        }
+            if (kind == "stalled") streamMessage = data.GetProperty("reason").GetString();
+            if (kind == "terminal") streamMessage = null;
+            await OnMessage.InvokeAsync(new SagaStreamMessage(kind, data));
+            StateHasChanged();
+        }));
+        if (disposed || OrderId != id) await next.DisposeAsync();
+        else subscription = next;
+        if (!disposed) StateHasChanged();
     }
-
     private static bool IsFailure(SagaEvent item) =>
         item.EventType is "ReservationFailed" or "PaymentFailed";
 
@@ -156,9 +135,9 @@
         return string.Empty;
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
-        cts?.Cancel();
-        cts?.Dispose();
+        disposed = true;
+        if (subscription is not null) await subscription.DisposeAsync();
     }
 }

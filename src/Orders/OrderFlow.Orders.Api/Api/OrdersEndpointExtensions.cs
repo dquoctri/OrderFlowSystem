@@ -96,15 +96,7 @@ public static class OrdersEndpointExtensions
             .OrderBy(entry => entry.Seq)
             .ToListAsync(cancellationToken);
 
-        return Results.Ok(log.Select(entry => new
-        {
-            entry.Seq,
-            eventType = entry.EventType,
-            source = entry.Source,
-            occurredAt = entry.OccurredAt,
-            recordedAt = entry.RecordedAt,
-            detail = entry.Detail is null ? (JsonElement?)null : JsonSerializer.Deserialize<JsonElement>(entry.Detail)
-        }));
+        return Results.Ok(log.Select(OrderFlow.Orders.Infrastructure.Streaming.SagaRow.FromEntity));
     }
 
     private static async Task<IResult> GetOrdersAsync(string? customerId, OrdersDbContext db, CancellationToken cancellationToken)

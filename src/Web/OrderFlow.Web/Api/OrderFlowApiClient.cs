@@ -26,6 +26,9 @@ public sealed class OrderFlowApiClient
     public Task<DashboardView?> GetDashboardAsync(CancellationToken cancellationToken = default) =>
         httpClient.GetFromJsonAsync<DashboardView>("dashboard", cancellationToken);
 
+    public Task<TrackedOrderView?> GetTrackedOrderAsync(Guid orderId, CancellationToken cancellationToken = default) =>
+        httpClient.GetFromJsonAsync<TrackedOrderView>($"dashboard/orders/{orderId:D}", cancellationToken);
+
     private async Task<T?> PostAsync<T>(string url, object payload, CancellationToken cancellationToken)
     {
         using var response = await httpClient.PostAsJsonAsync(url, payload, cancellationToken);
