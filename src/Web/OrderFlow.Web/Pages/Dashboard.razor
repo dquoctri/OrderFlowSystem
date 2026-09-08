@@ -25,7 +25,7 @@
 
 @if (lastUpdated is not null)
 {
-    <p class="muted refresh-time">Last refresh: @lastUpdated.Value.LocalDateTime.ToString("HH:mm:ss.fff") (auto-refresh every 500ms)</p>
+    <p class="muted refresh-time">Last refresh: @lastUpdated.Value.LocalDateTime.ToString("HH:mm:ss.fff") (auto-refresh every 5 seconds)</p>
 }
 
 <section class="dashboard-grid">
@@ -139,14 +139,14 @@
                 }) — @trackedOrder.FailureReason
             </div>
         }
-        <p class="muted saga-help">The monitor polls Orders and reflects reservation/payment events as the saga reaches its terminal state.</p>
+        <p class="muted saga-help">The monitor receives saga events live through the BFF.</p>
     }
 </section>
 
 @if (trackedOrder is not null)
 {
     <section class="panel">
-        <SagaJourney OrderId="trackedOrder.OrderId" Active="@(trackedOrder.Status is not ("Confirmed" or "Cancelled"))" />
+        <SagaJourney @key="trackedOrder.OrderId" OrderId="trackedOrder.OrderId" OnMessage="UpdateProgress" />
     </section>
 }
 
@@ -165,7 +165,7 @@
     protected override async Task OnInitializedAsync()
     {
         await RefreshAsync(cancellation.Token);
-        refreshTimer = new PeriodicTimer(TimeSpan.FromMilliseconds(500));
+        refreshTimer = new PeriodicTimer(TimeSpan.FromSeconds(5));
         _ = RefreshLoopAsync(cancellation.Token);
     }
 
@@ -219,7 +219,7 @@
             }
 
             trackedOrderId ??= orders.FirstOrDefault()?.OrderId;
-            if (trackedOrderId.HasValue)
+            if (trackedOrderId.HasValue && trackedOrder?.OrderId != trackedOrderId)
             {
                 try
                 {
@@ -251,6 +251,11 @@
     {
         trackedOrderId = orderId;
         await RefreshAsync(cancellation.Token);
+    }
+
+    private void UpdateProgress(SagaStreamMessage update)
+    {
+        if (trackedOrder is not null) trackedOrder = SagaProgress.Apply(trackedOrder, update.Kind, update.Data);
     }
 
     private static string StatusClass(string status) => status.ToLowerInvariant() switch

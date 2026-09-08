@@ -264,6 +264,7 @@ Source of truth for the saga's overall progress. Owns schema `orderflow_orders`:
 | --- | --- |
 | `POST /orders` | [OrdersEndpointExtensions.cs](../src/Orders/OrderFlow.Orders.Api/Api/OrdersEndpointExtensions.cs) — writes `orders` + `order_lines` + `order_saga_state` + an `OrderPlaced` outbox row in **one `SaveChanges`**, returns `202 Accepted` with `orderId == correlationId`. |
 | `GET /orders/{id}` | Header, lines, `reservationCompleted` / `paymentCompleted`, and the **outcome**: `failureStage` (`ReservationRejected` \| `PaymentDeclined`), `failureReason`, `completedAt`. |
+| `GET /orders/{id}/stream` | SSE replay and live saga rows, followed by terminal; backed by the PostgreSQL notification trigger. |
 | `GET /orders/{id}/trace` | The ordered `order_saga_log` — every saga event Orders recorded, with `source`, `occurredAt`, and a small `detail` JSON (reason, amount, released lines). Drives the UI event feed. |
 | `GET /orders?customerId=` | List; `customer_id` is indexed. |
 | `GET /health/live` \| `/health/ready` \| `/health` | liveness (always cheap) / dependency readiness (DB + Pulsar). |
@@ -341,10 +342,10 @@ Blazor WebAssembly, served as static files by nginx. `wwwroot/appsettings.json` 
 **single** URL — `ApiUrls:Bff` — no per-service addresses, no secrets, no connection strings.
 `OrderFlowApiClient` is a thin typed client over that one origin.
 
-- **Place order** ([PlaceOrder.razor](../src/Web/OrderFlow.Web/Pages/PlaceOrder.razor)) — build lines, submit, poll `GET /orders/{id}` every 250 ms until terminal. Shows the status trail, a `SagaTimeline`, an **outcome banner** ("Payment was declined — totals ending in .99 are rejected. Reserved stock has been released."), and the live **`SagaJourney`** feed. Polling uses a `CancellationTokenSource` disposed on navigation.
-- **Dashboard** ([Dashboard.razor](../src/Web/OrderFlow.Web/Pages/Dashboard.razor)) — one `GET /dashboard` call to the BFF per 500 ms tick fills both the stock and recent-orders panels; any `warnings` from the BFF render as a banner. The tracked order's timeline / reason / event journey is a second call (`GET /orders/{id}`).
+- **Place order** (`PlaceOrder.razor`) submits a normal POST, then receives live saga events through one BFF EventSource. Status trail, timeline, outcome banner and event cards share that stream. Navigation disposes the subscription.
+- **Dashboard** (`Dashboard.razor`) refreshes stock and recent orders with `GET /dashboard` every five seconds. Selecting an order loads its details once, then one EventSource updates its timeline, reason and journey.
 - **SagaTimeline** ([SagaTimeline.razor](../src/Web/OrderFlow.Web/Components/SagaTimeline.razor)) — `Placed → Reserved → Charged → Confirmed/Cancelled` stepper; the failed step is coloured from the order's `failureStage`.
-- **SagaJourney** ([SagaJourney.razor](../src/Web/OrderFlow.Web/Components/SagaJourney.razor)) — vertical activity feed of `GET /orders/{id}/trace` (via the BFF pass-through), one card per event with a source badge (orders / inventory / payments) and a detail line (amount, reason, released lines). Polls the trace ~300–750 ms while the order is live, then stops. **Not yet SSE** — polling is intentional for the demo.
+- **SagaJourney** (`SagaJourney.razor`) owns the tracked-order stream and renders one card per saga event. It forwards progress to the parent, deduplicates replay by sequence, and shows connection stalls. The shared `SagaStreamClient` falls back to a five-second composed tracked-order poll after repeated connection errors.
 
 ### 2.5 BFF — `src/Web/OrderFlow.Bff`, host port 5004
 
@@ -355,6 +356,7 @@ its own view models (`Bff/Contracts/`) and speaks only HTTP + JSON.
 | Endpoint | Kind | What it does |
 | --- | --- | --- |
 | `GET /dashboard` | composed | Fans out to Orders `/orders` + Inventory `/stock` **in parallel** under one 3 s budget; returns `{ stock?, orders, warnings[], asOf }`. |
+| `GET /dashboard/orders/{id}/stream` | streaming | One Orders upstream per locally tracked order, fan-out and memory replay, with stalled/reconnect handling. |
 | `GET /dashboard/orders/{id}` | composed | Orders `/orders/{id}` + `/orders/{id}/trace` → `{ order, trace[] }`; `404` if Orders doesn't know the id. |
 | `POST /orders` | pass-through | Forwards the create request to Orders, relays status + body verbatim. |
 | `GET /orders/{id}`, `GET /orders/{id}/trace` | pass-through | Relay, so the SPA keeps one origin. |
@@ -537,7 +539,7 @@ The known trade-offs below are all acceptable for the challenge scope:
 | --- | --- | --- |
 | ~~1~~ | ~~Failure reason discarded~~ | **Fixed** — `failureStage` + `failureReason` on the order, shown in API + UI. |
 | ~~2~~ | ~~No per-order event trace~~ | **Fixed** — `order_saga_log` + `GET /orders/{id}/trace` + `SagaJourney` feed. |
-| 3 | The `SagaJourney` feed **polls** the trace; it is not yet true SSE. | Slightly chatty; fine for a demo. |
+| 3 | SSE fan-out history is per BFF replica; connections have a ten-minute cap. | Duplicate upstreams across replicas are accepted; browsers reconnect and replay automatically. |
 | 4 | Redelivery is detached (no longer blocks the loop) but still one consumer per subscription per instance; sustained failures on one order add latency to others on that instance. | Minor under demo load. |
 | 5 | `OrderCancelled` is never published; `M3` create is not idempotent; `M5` status subscription kept on purpose. | None for the challenge scope. |
 | 6 | `ReservationSucceeded.ReservationId` is a fresh random GUID, unrelated to the `reservations` rows. Nobody consumes it. | Misleading payload field; harmless. |
@@ -550,19 +552,57 @@ The known trade-offs below are all acceptable for the challenge scope:
 
 ## 9. Verification status
 
-- `global.json`: `rollForward` changed from `latestPatch` (failed when only SDK `10.0.400` is
-  installed) to `latestFeature`.
-- `dotnet build OrderFlow.sln` — **passes, 0 warnings** on .NET SDK 10.0.400
-  (`Directory.Build.props`: `TreatWarningsAsErrors` + `AnalysisLevel=latest-recommended`; central
-  package versions in `Directory.Packages.props`).
-- `dotnet test --filter "Category!=Integration"` — **69/69 pass** (Orders 19, Payments 14, Inventory 36),
-  ~110 ms, no Docker. Covers: request validation + total, every order status transition + guard,
-  reserve/release/consume arithmetic + invariants, all-or-nothing reservation, the `.99` gateway
-  rule through `IPaymentGateway`, charge→event mapping, DLQ-after-3, redelivery backoff.
-- `dotnet test` (no filter) — same 69 pass, **3 skip** (`StockReservationConcurrencyTests`) when
-  Docker is not reachable from the test process; they run when it is.
-- `Category=Integration` — the 3 Testcontainers tests + `ComposeSagaTests` (both required flows
-  over real HTTP + Pulsar, now also asserting `failureStage` and `/trace`); need Docker, and
-  `ComposeSagaTests` needs the Compose stack already up.
-- Container startup / browser demo — run per [demo-script.md](demo-script.md) on a Docker host
-  (no Docker was available in the implementation environment).
+- `dotnet build OrderFlow.sln -c Release`: passes with zero warnings.
+- `dotnet test --filter "Category!=Integration"`: 84 passing tests, Docker-free.
+- `node --test tests/Web.Tests/sse.test.mjs`: three passing interop lifecycle tests.
+- `SagaNotificationTests`: real PostgreSQL migration, LISTEN notification, and hub delivery
+  pass from a Docker-connected SDK container. This test skips when Docker is unavailable.
+- `ComposeSseTests`: happy/declined streams, replay via direct Orders and BFF, terminal
+  closure, and HTTP error cases pass against a stack scaled to three BFF and Orders replicas.
+- Six concurrent viewers stayed connected beyond 30 seconds, received `stalled` on an Orders
+  outage, and resumed without duplicate or missing events before terminal cancellation.
+- Existing Compose saga and BFF integration tests also pass. Headless Edge rendered the success
+  banner and three event cards from one stream, with no trace polling or browser exceptions.
+- `nginx -t`: passes. PostgreSQL `max_connections` is 100 at this demo scale.
+## Live saga feed: Orders producer and BFF fan-out
+
+Orders exposes `GET /orders/{id}/stream` alongside `/trace`. Both use the same `SagaRow`
+projection. A hand-written migration installs `orderflow_orders.notify_saga_log()` and its
+AFTER INSERT trigger, using the existing quoted `"OrderId"` column. PostgreSQL sends only an
+order ID after commit; each replica's listener wakes subscribers to read durable rows.
+
+The BFF exposes `GET /dashboard/orders/{id}/stream`, sharing one upstream for each locally
+tracked order and replaying session history to late subscribers. Frames remain domain-opaque.
+No new service, table, broker bridge, or contract-package dependency is introduced.
+
+```mermaid
+sequenceDiagram
+    participant Browser as Browser EventSource
+    participant Edge as edge:5004
+    participant BFF as BFF fan-out
+    participant Orders as Orders stream
+    participant DB as PostgreSQL
+    participant Consumer as Orders consumer (any replica)
+    Orders->>DB: LISTEN order_saga_log (one connection per replica)
+    Browser->>Edge: GET /dashboard/orders/{id}/stream
+    Edge->>BFF: unbuffered HTTP
+    BFF->>Orders: GET /orders/{id}/stream
+    Orders->>DB: replay seq greater than cursor
+    Orders-->>BFF: saga frames
+    BFF-->>Browser: replay and live events
+    Consumer->>DB: insert saga log row and commit
+    DB-->>Orders: trigger NOTIFY(orderId)
+    Orders->>DB: read new rows and status snapshot
+    Orders-->>BFF: saga, then terminal when complete
+    BFF-->>Browser: fan-out, then close on terminal
+```
+
+The dashboard's stock/orders tables refresh every five seconds; selected-order progress is
+streamed. A payment decline shows `Compensating` until `StockReleased` arrives, then the
+terminal cancellation banner. Stopping Payments delays progress while heartbeats continue;
+losing the upstream Orders connection emits `stalled` and triggers BFF reconnect with backoff.
+
+Both stream endpoints have a ten-minute cap and 15-second heartbeats. A notification outage
+is repaired by periodic replay and listener reconnect. Fan-out memory and upstream connections
+are per replica and released when the last local subscriber leaves; duplicate upstreams across
+BFF replicas are accepted. Each Orders replica adds one dedicated PostgreSQL connection.

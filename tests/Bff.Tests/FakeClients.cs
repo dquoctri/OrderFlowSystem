@@ -6,6 +6,11 @@ namespace Bff.Tests;
 /// <summary>A configurable stand-in for the Orders service.</summary>
 internal sealed class FakeOrdersClient : IOrdersClient
 {
+    public Func<Guid, string?, CancellationToken, Task<HttpResponseMessage>> OpenStream { get; set; } =
+        (_, _, _) => throw new NotSupportedException();
+    public Task<HttpResponseMessage> OpenTraceStreamAsync(Guid orderId, string? lastEventId, CancellationToken cancellationToken) =>
+        OpenStream(orderId, lastEventId, cancellationToken);
+
     public IReadOnlyList<UpstreamOrderSummaryDto> RecentOrders { get; set; } = [];
     public UpstreamOrderDetailsDto? Order { get; set; }
     public IReadOnlyList<UpstreamSagaEventDto> Trace { get; set; } = [];

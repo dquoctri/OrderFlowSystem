@@ -37,7 +37,7 @@
         }
         else
         {
-            <p class="muted">The page follows the order every 250&nbsp;ms while the saga runs.</p>
+            <p class="muted">The page receives saga events live while the order runs.</p>
         }
 
         <SagaTimeline Order="latest" />
@@ -48,12 +48,12 @@
     </div>
 
     <div class="panel">
-        <SagaJourney OrderId="order.OrderId" Active="@(!IsTerminal(latest?.Status))" />
+        <SagaJourney @key="order.OrderId" OrderId="order.OrderId" OnMessage="UpdateProgress" />
     </div>
 }
 
 @code {
-    private CancellationTokenSource? pollingCts;
+    private CancellationTokenSource? requestCts;
     private string customerId = "cust-demo";
     private List<EditableOrderLine> lines = new() { new("WIDGET-01", 1, 10.00m) };
     private OrderCreated? order;
@@ -66,10 +66,10 @@
 
     private async Task SubmitAsync()
     {
-        pollingCts?.Cancel();
-        pollingCts?.Dispose();
-        pollingCts = new CancellationTokenSource();
-        var cancellationToken = pollingCts.Token;
+        requestCts?.Cancel();
+        requestCts?.Dispose();
+        requestCts = new CancellationTokenSource();
+        var cancellationToken = requestCts.Token;
         isSubmitting = true;
         message = null;
         order = null;
@@ -77,8 +77,9 @@
         statusHistory.Clear();
         try
         {
-            order = await Api.CreateOrderAsync(new CreateOrderRequest(customerId,
-                lines.Select(line => new CreateOrderLineRequest(line.Sku, line.Quantity, line.UnitPrice)).ToList()), cancellationToken);
+            var request = new CreateOrderRequest(customerId,
+                lines.Select(line => new CreateOrderLineRequest(line.Sku, line.Quantity, line.UnitPrice)).ToList());
+            order = await Api.CreateOrderAsync(request, cancellationToken);
             if (order is null)
             {
                 message = "The Orders API did not return an order.";
@@ -86,13 +87,9 @@
             }
 
             RecordStatus(order.Status);
-            for (var attempt = 0; attempt < 60 && !cancellationToken.IsCancellationRequested; attempt++)
-            {
-                latest = await Api.GetOrderAsync(order.OrderId, cancellationToken);
-                RecordStatus(latest?.Status);
-                if (IsTerminal(latest?.Status)) break;
-                await Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken);
-            }
+            latest = new OrderDetails(order.OrderId, request.CustomerId, order.Status,
+                request.Lines.Sum(line => line.Quantity * line.UnitPrice), false, false, null, null, null,
+                [], DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -128,8 +125,12 @@
         return null;
     }
 
-    private static bool IsTerminal(string? status) =>
-        status is "Confirmed" or "Cancelled";
+    private void UpdateProgress(SagaStreamMessage update)
+    {
+        if (latest is null) return;
+        latest = SagaProgress.Apply(latest, update.Kind, update.Data);
+        RecordStatus(latest.Status);
+    }
 
     private void RecordStatus(string? status)
     {
@@ -149,7 +150,7 @@
 
     public void Dispose()
     {
-        pollingCts?.Cancel();
-        pollingCts?.Dispose();
+        requestCts?.Cancel();
+        requestCts?.Dispose();
     }
 }

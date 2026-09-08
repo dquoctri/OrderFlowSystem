@@ -1,3 +1,4 @@
+using OrderFlow.Orders.Infrastructure.Streaming;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using OrderFlow.Messaging;
@@ -38,6 +39,9 @@ builder.Services.AddSingleton(serviceProvider =>
     var pulsar = serviceProvider.GetRequiredService<IOptions<PulsarOptions>>().Value;
     return new PulsarEventBus(pulsar.ServiceUrl, serviceProvider.GetRequiredService<ILogger<PulsarEventBus>>());
 });
+builder.Services.AddSingleton<ISagaRowSource, SagaRowSource>();
+builder.Services.AddSingleton<SagaStreamHub>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<SagaStreamHub>());
 builder.Services.AddHostedService<OrdersOutboxPublisher>();
 builder.Services.AddHostedService<OrderPlacedConsumer>();
 builder.Services.AddHostedService<ReservationSucceededConsumer>();
@@ -64,6 +68,7 @@ app.UseExceptionHandler();
 app.UseStatusCodePages();
 app.UseCors();
 app.MapOrdersEndpoints();
+app.MapStreamEndpoints();
 app.MapDeadLetterEndpoints();
 app.MapGet("/", () => Results.Ok(new { service = "orders" }));
 app.MapHealthChecks("/health/live", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions

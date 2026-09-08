@@ -34,6 +34,12 @@ public abstract class OrdersEventConsumer : PulsarConsumerWorker
             return;
         }
 
+        // Different topic consumers can run concurrently even with KeyShared subscriptions.
+        // Serialize the per-order log cursor allocation so SSE resume IDs cannot collide.
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            SELECT 1 FROM "orderflow_orders"."orders" WHERE "Id" = {message.OrderId} FOR UPDATE
+            """, cancellationToken);
+
         var order = await db.Orders.Include(value => value.SagaState)
             .SingleOrDefaultAsync(value => value.Id == message.OrderId, cancellationToken)
             ?? throw new InvalidOperationException($"Order {message.OrderId} does not exist.");

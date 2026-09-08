@@ -5,6 +5,8 @@ namespace OrderFlow.Bff.Clients;
 /// <summary>Typed access to the Orders service. One method per call the BFF needs — nothing else.</summary>
 public interface IOrdersClient
 {
+    Task<HttpResponseMessage> OpenTraceStreamAsync(Guid orderId, string? lastEventId, CancellationToken cancellationToken);
+
     // --- composition: deserialised, mapped onto BFF contracts ---
 
     Task<IReadOnlyList<UpstreamOrderSummaryDto>> GetRecentOrdersAsync(CancellationToken cancellationToken);

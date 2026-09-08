@@ -25,7 +25,7 @@ curl -s http://localhost:5004/health/ready     # BFF — also pings Orders + Inv
 ```
 
 Open the UI at <http://localhost:5000>. Keep **/dashboard** open in one tab — it auto-refreshes
-every 500 ms and is the single screen that tells the whole story.
+its tables every five seconds; the selected order streams events live and is the single screen that tells the whole story.
 
 Seed stock: `WIDGET-01` = 10 on hand, `WIDGET-02` = 5 on hand.
 
@@ -193,3 +193,28 @@ To re-run the demo from clean seed stock without a full teardown, use `down -v` 
 docker compose up --build            # leave running
 dotnet test --filter "Category=Integration"
 ```
+
+## Live feed and reconnect demo
+
+1. Open browser developer tools, Network, and place an order. Show the single EventSource
+   request to `:5004/dashboard/orders/{id}/stream`: `saga` frames arrive without `/trace` polling.
+   The stream sends `terminal` and closes; on a `.99` order, `StockReleased` precedes terminal.
+2. Compare raw and edge streams (an already completed order replays immediately):
+
+   ```bash
+   curl -N http://localhost:5001/orders/$ORDER/stream
+   curl -N -H 'Last-Event-ID: 2' http://localhost:5004/dashboard/orders/$ORDER/stream
+   ```
+
+3. Stop Payments **before** placing another order (`docker compose stop payments-api`).
+   The feed pauses at reservation while heartbeats continue. Restart with
+   `docker compose start payments-api`: the remaining saga events arrive. This is a saga pause,
+   not a transport failure; it does not itself emit `stalled`.
+4. Scale with `docker compose up -d --scale bff=3 --scale orders-api=3`. Keep Payments paused
+   and open several tabs on a pending order. Stop one Orders container with
+   `docker stop <orders-container-id>`: affected BFF streams emit `stalled`, retry, and resume
+   from their last event ID. Restart that container and Payments after the demonstration.
+   Every viewer must receive the complete sequence without duplicate cards.
+5. Run `dotnet test --filter FullyQualifiedName~ComposeSseTests` against the running stack.
+   These checks cover happy/declined streams, direct and BFF resume, terminal closure, and errors.
+   Ensure WIDGET-02 has stock before running tests against an existing demo volume.

@@ -27,8 +27,8 @@ The Web SPA has **one** HTTP origin: the BFF. It no longer knows the Orders/Inve
 `src/Web/OrderFlow.Bff` is a stateless ASP.NET Core app that composes the domain services for the
 web UI. Rules it must not break:
 
-- **No state.** No database, no broker, no cache that must be shared between replicas. The only
-  in-process state is HTTP connection pools.
+- **No durable state.** No database, broker, or cache that must be shared between replicas.
+  In-process state consists of HTTP connection pools and active SSE fan-out sessions.
 - **No domain coupling.** It references no project in `src/` — not `OrderFlow.Contracts`, not an
   entity, not a `DbContext`. It owns its own view-model records under `Bff/Contracts/` and maps
   the downstream JSON onto them, so an internal contract change never reaches the browser.
@@ -96,10 +96,40 @@ pinning to the first one resolved.
 | Port | Service | Public responsibilities |
 | --- | --- | --- |
 | 5000 | Web | Browser UI only. All its API calls go to the BFF (5004). |
-| 5001 | Orders | Create an order, query an order + outcome, `GET /orders/{id}/trace`, list a customer's orders, health, DLQ admin. |
+| 5001 | Orders | Create an order, query an order + outcome, `GET /orders/{id}/trace`, `GET /orders/{id}/stream`, list a customer's orders, health, DLQ admin. |
 | 5002 | Inventory | Query stock, demo stock adjustment, health, DLQ admin. |
 | 5003 | Payments | Query a payment, health, DLQ admin. |
-| 5004 | BFF | `GET /dashboard` and `GET /dashboard/orders/{id}` (composed views); `POST /orders`, `GET /orders/{id}`, `GET /orders/{id}/trace` (pass-through to Orders); health. No business logic, no persistence. |
+| 5004 | BFF | `GET /dashboard` and `GET /dashboard/orders/{id}` (composed views); `GET /dashboard/orders/{id}/stream` (SSE fan-out); `POST /orders`, `GET /orders/{id}`, `GET /orders/{id}/trace` (pass-through to Orders); health. No business logic, no persistence. |
 
 Ports 5001–5003 stay published: the demo script and integration tests hit the services directly,
 and it is useful to show the SPA using only 5004 while the services remain independently reachable.
+
+## Live updates (SSE)
+
+Orders produces `GET /orders/{id}/stream` from `order_saga_log`. The insert trigger notifies
+`order_saga_log` after commit; one dedicated PostgreSQL LISTEN connection per Orders replica
+signals its subscribers. Each subscriber re-queries after its sequence cursor, including every
+15 seconds and after listener reconnect, so coalesced or missed notifications cannot lose rows.
+Consumers lock the order row before allocating a sequence: different topics can run concurrently,
+so KeyShared alone cannot prevent duplicate SSE cursor IDs.
+Replay reads order status and log rows in one repeatable-read snapshot. Payment-declined streams
+wait for `StockReleased` before emitting `terminal`; the existing order status transition is unchanged.
+
+The BFF forwards opaque `saga` and `terminal` frames at `GET /dashboard/orders/{id}/stream`.
+One upstream connection per active order per BFF replica serves local subscribers, with in-memory
+replay for late joiners. Last subscriber departure cancels and disposes the upstream. Slow
+subscribers are disconnected to replay, rather than silently losing events. Upstream loss emits
+`stalled`, retries with backoff, and resumes with `Last-Event-ID`. The separate named stream HTTP
+client has a connect timeout and pooled connection lifetime, without the standard request timeout.
+
+A browser connection stays on one BFF replica for its lifetime. Different BFF replicas can hold
+separate upstreams for the same order; no shared cache or backplane is required. Any Orders
+replica sees any other replica's committed inserts through PostgreSQL notifications. Budget one
+additional database connection per Orders replica (three extra at the documented demo scale;
+PostgreSQL's default 100-connection limit leaves headroom, subject to ordinary request load).
+
+The SPA uses one native EventSource per tracked order, feeding both the timeline and event cards.
+Only dashboard tables poll, every five seconds. After three connection errors the shared client
+falls back to the composed tracked-order endpoint every five seconds. Both SSE endpoints cap
+connections at ten minutes, send 15-second heartbeats, and disable nginx buffering. Browser
+reconnects use `Last-Event-ID`; malformed cursors return 400 and unknown orders return 404.
